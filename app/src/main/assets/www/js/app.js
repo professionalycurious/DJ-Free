@@ -1,4 +1,4 @@
-import { Engine } from './engine.js';
+import { Engine, diag } from './engine.js';
 import { Library } from './library.js';
 import { UI } from './ui.js';
 import { Automix } from './automix.js';
@@ -26,6 +26,9 @@ const start = async () => {
     document.getElementById('splash').remove();
     // resume audio after any interruption (phone call, other app)
     document.addEventListener('pointerdown', () => engine.resume(), { passive: true });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) engine.resume(); });
+    window.addEventListener('error', (e) => { diag.lastError = String(e.message || e.error); toast('Error: ' + diag.lastError, 4000); });
+    window.addEventListener('unhandledrejection', (e) => { diag.lastError = String((e.reason && e.reason.message) || e.reason); toast('Error: ' + diag.lastError, 4000); });
     if (!library.local.length) setTimeout(() => toast('Tip: LIBRARY → ＋ ADD MUSIC, or try the Demo Tracks'), 600);
   } catch (e) {
     console.error(e);

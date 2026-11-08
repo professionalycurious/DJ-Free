@@ -14,26 +14,65 @@ const dB = (v) => Math.pow(10, v / 20);
 
 let workerSeq = 0;
 const pending = new Map();
-let worker = null;
-function analyzer() {
-  if (!worker) {
-    worker = new Worker('js/analysis-worker.js');
-    worker.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); e.data.ok ? p.res(e.data.res) : p.rej(new Error(e.data.error)); };
-  }
-  return worker;
+let workerP = null;
+let mainAnalyze = null;
+export const diag = { worklet: '-', worker: '-', lastError: '' };
+
+/* Analysis runs in a Web Worker created from a Blob (Android WebView does not always route
+ * worker script requests through the app's asset server). If the worker can't start or
+ * stalls, the same code runs on the main thread instead. */
+async function analysisSource() { return (await fetch('js/analysis-worker.js')).text(); }
+async function fallbackAnalyze() {
+  if (!mainAnalyze) mainAnalyze = new Function('self', (await analysisSource()) + '\nreturn analyze;')({});
+  return mainAnalyze;
 }
-export function analyzeBuffer(buf) {
-  const n = buf.length, mono = new Float32Array(n);
-  const c0 = buf.getChannelData(0), c1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : c0;
-  for (let i = 0; i < n; i++) mono[i] = (c0[i] + c1[i]) * 0.5;
+function getWorker() {
+  if (!workerP) workerP = (async () => {
+    try {
+      const url = URL.createObjectURL(new Blob([await analysisSource()], { type: 'text/javascript' }));
+      const w = new Worker(url);
+      w.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); e.data.ok ? p.res(e.data.res) : p.rej(new Error(e.data.error)); };
+      w.onerror = (e) => { diag.worker = 'failed: ' + (e.message || 'error'); for (const p of pending.values()) p.fail(); pending.clear(); workerP = Promise.resolve(null); };
+      diag.worker = 'ok';
+      return w;
+    } catch (e) { diag.worker = 'unavailable (main thread)'; return null; }
+  })();
+  return workerP;
+}
+export async function analyzeBuffer(buf) {
+  const makeMono = () => {
+    const n = buf.length, mono = new Float32Array(n);
+    const c0 = buf.getChannelData(0), c1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : c0;
+    for (let i = 0; i < n; i++) mono[i] = (c0[i] + c1[i]) * 0.5;
+    return mono;
+  };
+  const onMain = async () => (await fallbackAnalyze())(makeMono(), buf.sampleRate);
+  const w = await getWorker();
+  if (!w) return onMain();
+  const mono = makeMono();
   const id = ++workerSeq;
-  return new Promise((res, rej) => { pending.set(id, { res, rej }); analyzer().postMessage({ id, mono, sampleRate: buf.sampleRate }, [mono.buffer]); });
+  return new Promise((res, rej) => {
+    let done = false;
+    const fail = () => { if (done) return; done = true; pending.delete(id); onMain().then(res, rej); };
+    const timer = setTimeout(() => { diag.worker = 'timed out (main thread)'; fail(); }, 45000);
+    pending.set(id, { res: (v) => { if (done) return; done = true; clearTimeout(timer); res(v); }, rej: (e) => { if (done) return; done = true; clearTimeout(timer); rej(e); }, fail: () => { clearTimeout(timer); fail(); } });
+    try { w.postMessage({ id, mono, sampleRate: buf.sampleRate }, [mono.buffer]); } catch (e) { clearTimeout(timer); fail(); }
+  });
 }
 
 export class Engine {
   async init() {
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
-    await this.ctx.audioWorklet.addModule('js/worklets.js');
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+    this.unlock(); // must happen synchronously inside the tap gesture
+    if (!this.ctx.audioWorklet) throw new Error('This Android System WebView is too old (no AudioWorklet). Update "Android System WebView" / Chrome from the Play Store.');
+    try {
+      const src = await (await fetch('js/worklets.js')).text();
+      await this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      diag.worklet = 'ok (blob)';
+    } catch (e) {
+      await this.ctx.audioWorklet.addModule('js/worklets.js');
+      diag.worklet = 'ok (url)';
+    }
     const ctx = this.ctx;
     this.master = ctx.createGain();
     this.masterVol = ctx.createGain();
@@ -64,7 +103,21 @@ export class Engine {
     this.applyLimiter();
     this.setCrossfader(0.5);
   }
-  resume() { if (this.ctx.state !== 'running') this.ctx.resume(); }
+  resume() { if (this.ctx.state !== 'running') { this.ctx.resume().catch(() => {}); this.unlock(); } }
+  /** Plays a tiny silent buffer: required on some Android WebViews before any sound comes out. */
+  unlock() {
+    try {
+      const b = this.ctx.createBuffer(1, 1, 22050), s = this.ctx.createBufferSource();
+      s.buffer = b; s.connect(this.ctx.destination); s.start(0);
+      this.ctx.resume().catch(() => {});
+    } catch (e) { /* ignore */ }
+  }
+  testTone() {
+    this.resume();
+    const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.frequency.value = 440; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+    o.connect(g); g.connect(this.ctx.destination); o.start(t); o.stop(t + 0.85);
+  }
   applyLimiter() {
     const t = this.ctx.currentTime;
     this.limiter.threshold.setValueAtTime(settings.limiter ? -1.5 : 0, t);
@@ -75,7 +128,7 @@ export class Engine {
     this.outNormal.gain.setTargetAtTime(settings.splitCue ? 0 : 1, t, 0.01);
     this.splitOut.gain.setTargetAtTime(settings.splitCue ? 1 : 0, t, 0.01);
   }
-  setMasterVolume(v) { this.masterVol.gain.setTargetAtTime(v * v * 1.2, this.ctx.currentTime, 0.02); }
+  setMasterVolume(v) { this.masterVol.gain.setTargetAtTime(v * v * 1.5, this.ctx.currentTime, 0.02); }
   setCrossfader(x) {
     this.xfader = x;
     let a, b;

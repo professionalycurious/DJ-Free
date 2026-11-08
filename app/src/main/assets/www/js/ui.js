@@ -1,5 +1,5 @@
 /* DJ Free user interface. */
-import { settings, saveSettings, SAMPLE_NAMES } from './engine.js';
+import { settings, saveSettings, SAMPLE_NAMES, diag } from './engine.js';
 import { FX_LIST, BEAT_DIVS } from './fx.js';
 import { Knob, Fader, toggle, seg, toast, h, esc } from './widgets.js';
 import { TRANSITIONS, fmt } from './automix.js';
@@ -115,7 +115,11 @@ export class UI {
       ui.sync = h('button', 'sync', 'SYNC'); ui.cue = h('button', 'cue', 'CUE'); ui.play = h('button', 'play', '▶︎');
       tr.append(ui.sync, ui.cue, ui.play);
       ui.sync.addEventListener('click', () => { if (!d.sync()) toast('Load tracks on both decks to sync'); });
-      ui.play.addEventListener('click', () => { if (!d.track) return this.showPage('library'); d.toggle(); });
+      ui.play.addEventListener('click', () => {
+        if (!d.track) { toast('Load a track first (LIBRARY → A / B)'); return this.showPage('library'); }
+        d.toggle();
+        if (d.playing) { const p0 = d.pos; setTimeout(() => { if (d.playing && d.pos === p0) toast('No audio from the engine — open ⚙ Settings → Audio check', 5000); }, 1500); }
+      });
       ui.cue.addEventListener('pointerdown', () => d.cueDown());
       ui.cue.addEventListener('pointerup', () => d.cueUp());
       ui.cue.addEventListener('pointercancel', () => d.cueUp());
@@ -596,6 +600,14 @@ export class UI {
     const selectEl = (opts, val, fn) => { const s = h('select'); opts.forEach(([v, l]) => s.appendChild(new Option(l, v))); s.value = String(val); s.addEventListener('change', () => fn(s.value)); return s; };
     const tgl = (key, after) => { const w = h('div'); toggle(w, '', settings[key], (v) => { settings[key] = v; saveSettings(); after && after(v); }); return w.firstChild; };
 
+    body.appendChild(h('h4', '', 'AUDIO CHECK'));
+    const E = this.E, info = h('div', 'muted small');
+    const upd = () => { info.innerHTML = `Engine: <b>${E.ctx.state}</b> · ${E.ctx.sampleRate} Hz · latency ${Math.round(((E.ctx.baseLatency || 0) + (E.ctx.outputLatency || 0)) * 1000)} ms · worklet ${diag.worklet} · analysis ${diag.worker}` +
+      E.decks.map(d => ` · Deck ${d.name}: ${d.track ? (d.playing ? 'playing ' : 'stopped ') + d.position().toFixed(1) + 's' : 'empty'}`).join('') + (diag.lastError ? `<br>Last error: ${esc(diag.lastError)}` : ''); };
+    upd(); const iv = setInterval(() => { if (document.getElementById('modal').classList.contains('hidden')) clearInterval(iv); else upd(); }, 500);
+    const tt = h('button', 'btn', '🔊 Play test tone'); tt.addEventListener('click', () => { E.testTone(); setTimeout(upd, 300); });
+    const r = h('div', 'set-row'); r.append(info, tt); body.appendChild(r);
+    body.appendChild(h('div', 'muted small', 'No beep? Turn up the MEDIA volume (volume key → media slider) and check Bluetooth/silent mode.'));
     body.appendChild(h('h4', '', 'DECKS'));
     row('Pitch fader range', selectEl([[4, '±4%'], [8, '±8%'], [16, '±16%'], [50, '±50%']], settings.pitchRange, (v) => { settings.pitchRange = +v; saveSettings(); this.E.decks.forEach(d => this.syncPitchFader(d)); }));
     row('Key lock (master tempo)', tgl('keylock', () => { this.E.decks.forEach(d => d.applyRate()); this.deckUI.forEach(u => u.keylock.classList.toggle('on', settings.keylock)); }));

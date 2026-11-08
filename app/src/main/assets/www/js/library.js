@@ -21,7 +21,9 @@ export class Library {
   addFiles(files) {
     const added = [];
     for (const f of files) {
-      if (!/^audio\/|^video\/mp4|ogg$/.test(f.type) && !/\.(mp3|m4a|aac|wav|flac|ogg|opus|webm|mp4|aiff?)$/i.test(f.name)) continue;
+      // Android pickers often give files without MIME type or extension: accept everything except
+      // obvious non-audio and let the decoder decide.
+      if (/^(image|text)\//.test(f.type)) continue;
       const id = 'f-' + f.name + '-' + f.size;
       if (this.local.find(t => t.id === id)) continue;
       const base = f.name.replace(/\.[^.]+$/, '');
@@ -55,7 +57,8 @@ export class Library {
       if (!r.ok) throw new Error('Preview download failed (' + r.status + ')');
       ab = await r.arrayBuffer();
     } else throw new Error('Unknown source');
-    return this.engine.ctx.decodeAudioData(ab);
+    try { return await this.engine.ctx.decodeAudioData(ab); }
+    catch (e) { throw new Error('this file format can\'t be decoded on this phone'); }
   }
 
   /** Returns {buffer, analysis}; keeps the 4 most recent decoded tracks in memory. */
