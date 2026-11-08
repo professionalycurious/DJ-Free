@@ -1,0 +1,35 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.djfree.app'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.djfree.app'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        // Project key so every build (local or CI) can update an installed copy.
+        // Not intended for Play Store publishing.
+        djfree {
+            storeFile rootProject.file('keystore/djfree.jks')
+            storePassword 'djfree123'
+            keyAlias 'djfree'
+            keyPassword 'djfree123'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.djfree
+        }
+        debug { signingConfig signingConfigs.djfree }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    androidResources { noCompress += ['js', 'css', 'html'] }
+}

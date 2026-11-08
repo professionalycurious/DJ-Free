@@ -1,0 +1,37 @@
+import { Engine } from './engine.js';
+import { Library } from './library.js';
+import { UI } from './ui.js';
+import { Automix } from './automix.js';
+import { toast } from './widgets.js';
+
+const start = async () => {
+  const btn = document.getElementById('startBtn');
+  btn.disabled = true; btn.textContent = 'STARTING…';
+  try {
+    const engine = new Engine();
+    await engine.init();
+    await engine.ctx.resume();
+    const library = new Library(engine);
+    const ui = new UI(engine, library);
+    const automix = new Automix(engine, library, ui);
+    ui.init(automix);
+    window.DJ = {
+      engine, library, ui, automix,
+      onBack() {
+        if (!document.getElementById('modal').classList.contains('hidden')) { ui.closeModal(); return true; }
+        if (ui.page && ui.page !== 'mixer') { ui.showPage('mixer'); return true; }
+        return false;
+      },
+    };
+    document.getElementById('splash').remove();
+    // resume audio after any interruption (phone call, other app)
+    document.addEventListener('pointerdown', () => engine.resume(), { passive: true });
+    if (!library.local.length) setTimeout(() => toast('Tip: LIBRARY → ＋ ADD MUSIC, or try the Demo Tracks'), 600);
+  } catch (e) {
+    console.error(e);
+    btn.disabled = false; btn.textContent = 'TAP TO START';
+    alert('Audio engine failed to start: ' + (e.message || e));
+  }
+};
+
+document.getElementById('startBtn').addEventListener('click', start, { once: false });

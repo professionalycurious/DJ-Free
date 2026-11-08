@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0B0D12">
+<title>DJ Free</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="splash"><div class="logo-big">DJ<span>FREE</span></div><button id="startBtn" class="btn big accent">TAP TO START</button><div class="muted small">Automix · 22 FX · Apple Music · Recording</div></div>
+
+<header id="top">
+  <div class="brand">DJ<span>FREE</span></div>
+  <button id="amToggle" class="pill" title="Automix">AUTOMIX <b>OFF</b></button>
+  <div id="amStatus" class="am-status muted"></div>
+  <div class="spacer"></div>
+  <button id="recBtn" class="pill rec" title="Record mix"><i class="dot"></i><span id="recTime">REC</span></button>
+  <div class="master">
+    <div id="masterKnob"></div>
+    <canvas id="masterMeter" width="12" height="28"></canvas>
+  </div>
+  <button id="settingsBtn" class="icon-btn" title="Settings">⚙</button>
+</header>
+
+<section id="waves">
+  <div class="wave" data-deck="0">
+    <canvas class="wave-canvas"></canvas>
+    <div class="wave-info left"><b class="deck-tag a">A</b><span class="t-title">Load a track</span></div>
+    <div class="wave-info right"><span class="t-bpm">--</span><span class="t-key">-</span><span class="t-time">-0:00</span></div>
+  </div>
+  <canvas class="overview" data-deck="0"></canvas>
+  <div class="wave" data-deck="1">
+    <canvas class="wave-canvas"></canvas>
+    <div class="wave-info left"><b class="deck-tag b">B</b><span class="t-title">Load a track</span></div>
+    <div class="wave-info right"><span class="t-bpm">--</span><span class="t-key">-</span><span class="t-time">-0:00</span></div>
+  </div>
+  <canvas class="overview" data-deck="1"></canvas>
+</section>
+
+<main id="panel">
+  <!-- DECKS + MIXER -->
+  <section class="page active" id="page-mixer">
+    <div class="deck-col" data-deck="0"></div>
+    <div class="mixer" id="mixer"></div>
+    <div class="deck-col" data-deck="1"></div>
+  </section>
+
+  <!-- FX -->
+  <section class="page" id="page-fx">
+    <div class="fx-col" data-deck="0"></div>
+    <div class="xy-col">
+      <div class="xy-head">
+        <select id="xyTarget"></select>
+      </div>
+      <div id="xyPad"><div class="xy-dot"></div><div class="xy-label">X: PARAM · Y: AMOUNT</div></div>
+    </div>
+    <div class="fx-col" data-deck="1"></div>
+  </section>
+
+  <!-- PADS -->
+  <section class="page" id="page-pads">
+    <div class="pads-col" data-deck="0"></div>
+    <div class="sampler-col" id="sampler"></div>
+    <div class="pads-col" data-deck="1"></div>
+  </section>
+
+  <!-- LIBRARY -->
+  <section class="page" id="page-library">
+    <nav class="lib-src" id="libSrc">
+      <button data-src="local" class="active">📁 My Files</button>
+      <button data-src="apple">♫ Apple Music</button>
+      <button data-src="demo">🎛 Demo Tracks</button>
+      <button data-src="queue">⏭ Automix Queue</button>
+      <button data-src="history">🕘 History</button>
+    </nav>
+    <div class="lib-main">
+      <div class="lib-bar" id="libBar"></div>
+      <div class="lib-list" id="libList"></div>
+    </div>
+  </section>
+
+  <!-- AUTOMIX -->
+  <section class="page" id="page-automix">
+    <div class="am-left">
+      <div class="am-now">
+        <div class="lbl">NOW PLAYING</div><div id="amNow" class="am-track">—</div>
+        <div class="am-prog"><i id="amProg"></i></div>
+        <div class="lbl">UP NEXT</div><div id="amNext" class="am-track">—</div>
+      </div>
+      <div class="am-btns">
+        <button id="amPower" class="btn big">START AUTOMIX</button>
+        <button id="amMixNow" class="btn">MIX NOW</button>
+        <button id="amSkip" class="btn">SKIP NEXT</button>
+      </div>
+    </div>
+    <div class="am-mid">
+      <label>Transition <select id="amTrans"></select></label>
+      <div class="lbl">Length (beats)</div>
+      <div class="seg" id="amBeats"></div>
+      <div class="toggles" id="amToggles"></div>
+      <div class="am-btns">
+        <button id="amShuffleNow" class="btn small">Shuffle</button>
+        <button id="amSortNow" class="btn small">Key sort</button>
+        <button id="amAddAll" class="btn small">Queue all</button>
+        <button id="amClear" class="btn small">Clear</button>
+      </div>
+    </div>
+    <div class="am-queue" id="amQueue"></div>
+  </section>
+</main>
+
+<nav id="tabs">
+  <button data-page="mixer" class="active">DECKS</button>
+  <button data-page="fx">FX</button>
+  <button data-page="pads">PADS</button>
+  <button data-page="library">LIBRARY</button>
+  <button data-page="automix">AUTOMIX</button>
+</nav>
+
+<div id="modal" class="hidden"><div class="modal-box"><div class="modal-head"><b id="modalTitle"></b><button class="icon-btn" id="modalClose">✕</button></div><div id="modalBody"></div></div></div>
+<div id="toast"></div>
+<input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus" multiple hidden>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
