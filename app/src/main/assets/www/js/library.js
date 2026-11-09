@@ -17,7 +17,8 @@ export class Library {
     this.busy = false;
     this.listeners = new Set();
     this.metaCache = loadMeta();
-    if (this.native) this.restoreLocal();
+    this.desktop = !!window.DJDesktop;
+    if (this.native || this.desktop) this.restoreLocal();
   }
   on(f) { this.listeners.add(f); }
   emit(ev, t) { for (const f of this.listeners) f(ev, t); }
@@ -27,11 +28,13 @@ export class Library {
     const added = [];
     for (const f of files) {
       if (/^(image|text)\//.test(f.type)) continue;
-      const id = 'f-' + f.name + '-' + f.size;
+      const path = this.desktop ? window.DJDesktop.pathForFile(f) : '';
+      const id = path ? 'p:' + path : 'f-' + f.name + '-' + f.size;
       if (this.local.find(t => t.id === id)) continue;
-      const t = Object.assign({ id, source: 'local', file: f }, splitName(f.name), this.metaCache[id] || {});
+      const t = Object.assign(path ? { id, source: 'path', path } : { id, source: 'local', file: f }, splitName(f.name), this.metaCache[id] || {});
       this.local.push(t); added.push(t);
     }
+    this.saveLocal();
     for (const t of added) if (!t.bpm) this.queueAnalysis(t);
     this.emit('change');
     return added;
@@ -55,14 +58,20 @@ export class Library {
   removeLocal(t) { this.local = this.local.filter(x => x !== t); this.saveLocal(); this.emit('change'); }
   clearLocal() { this.local = []; this.saveLocal(); this.emit('change'); }
   saveLocal() {
-    if (!this.native) return;
-    try { localStorage.setItem('djfree.lib', JSON.stringify(this.local.map(t => ({ uri: t.uri, title: t.title, artist: t.artist, duration: t.duration })))); } catch (e) { /* quota */ }
+    if (!this.native && !this.desktop) return;
+    const keep = this.local.filter(t => t.source === 'uri' || t.source === 'path');
+    try { localStorage.setItem('djfree.lib', JSON.stringify(keep.map(t => ({ uri: t.uri, path: t.path, title: t.title, artist: t.artist, duration: t.duration })))); } catch (e) { /* quota */ }
   }
   restoreLocal() {
     let list = []; try { list = JSON.parse(localStorage.getItem('djfree.lib')) || []; } catch (e) { /* ignore */ }
     for (const f of list) {
-      const id = 'u:' + f.uri;
-      this.local.push(Object.assign({ id, source: 'uri', uri: f.uri, title: f.title, artist: f.artist, duration: f.duration }, this.metaCache[id] || {}));
+      if (f.uri && this.native) {
+        const id = 'u:' + f.uri;
+        this.local.push(Object.assign({ id, source: 'uri', uri: f.uri, title: f.title, artist: f.artist, duration: f.duration }, this.metaCache[id] || {}));
+      } else if (f.path && this.desktop) {
+        const id = 'p:' + f.path;
+        this.local.push(Object.assign({ id, source: 'path', path: f.path, title: f.title, artist: f.artist, duration: f.duration }, this.metaCache[id] || {}));
+      }
     }
     for (const t of this.local) if (!t.bpm) this.queueAnalysis(t);
   }
@@ -88,6 +97,11 @@ export class Library {
   async decode(t) {
     let ab;
     if (t.source === 'local') ab = await t.file.arrayBuffer();
+    else if (t.source === 'path') {
+      const r = await fetch('/__file?p=' + encodeURIComponent(t.path));
+      if (!r.ok) throw new Error('file not found (moved or deleted?)');
+      ab = await r.arrayBuffer();
+    }
     else if (t.source === 'demo') return renderDemo(t.demo, this.engine.sampleRate);
     else if (t.source === 'apple') {
       const r = await fetch(proxied(t.previewUrl));

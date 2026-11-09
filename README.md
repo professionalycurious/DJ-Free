@@ -2,8 +2,14 @@
 
 A free Android DJ app with **automix** — it beat-matches and mixes your songs automatically while you play with the FX.
 
-**Download:** [`release/DJ-Free.apk`](release/DJ-Free.apk) → open it on your phone → allow "Install unknown apps" → install.
-(Android 7.0+, landscape.)
+**Download**
+- **Android:** [`release/DJ-Free.apk`](release/DJ-Free.apk) → open it on your phone → allow "Install unknown apps" → install (Android 7.0+).
+- **Windows PC:** [`release/DJ-Free-Setup-1.1.0.exe`](release/DJ-Free-Setup-1.1.0.exe) → run it → *More info → Run anyway*
+  if SmartScreen warns (the app isn't code-signed). A portable no-install `.exe` is built by the *Build Windows EXE* workflow.
+
+**On PC:** drag & drop songs onto the window · library remembered · recordings saved to `Music\DJ Free` · F11 full screen ·
+keyboard: `Q`/`P` play A/B, `W`/`O` cue, `A`/`L` sync, `←`/`→` crossfader, `Z X C V B N , .` sampler pads, `M` automix,
+`R` record, `1`–`5` pages.
 
 ## Features
 
@@ -58,6 +64,9 @@ real-time thread and played through `AudioTrack`. The screen is a web UI that on
   `js/analysis-worker.js` (BPM, beat grid, key, waveform, mix points), `js/engine.js` (shared deck logic + a Web Audio
   backend used when the UI runs in a desktop browser)
 
+- `desktop/` — Windows / PC app (Electron) wrapping the same UI with the browser audio engine: `main.js` serves the UI on a
+  secure `app://` origin, reads your music files and proxies Apple previews; `preload.js` exposes file paths and recording saving
+
 ### Build it yourself
 
 ```bash
@@ -66,7 +75,10 @@ real-time thread and played through `AudioTrack`. The screen is a web UI that on
 # -> app/build/outputs/apk/release/app-release.apk
 ```
 
-Every push also builds the APK in GitHub Actions (artifact `DJ-Free-apk`).
+Windows (from `desktop/`): `npm install && npm run dist:win` → `desktop/dist/DJ-Free-Setup-*.exe` and `DJ-Free-Portable-*.exe`
+(on Linux this needs Wine for the installer).
+
+Every push also builds the APK and the Windows EXEs in GitHub Actions (artifacts `DJ-Free-apk` and `DJ-Free-windows`).
 The APK is signed with the project key in `keystore/` so updates install over older versions; use your own key if you
 ever publish it to a store.
 

@@ -9,7 +9,7 @@
  */
 import { settings } from './engine.js';
 
-const isNative = () => !!window.DJNative;
+const isNative = () => !!(window.DJNative || window.DJDesktop); // both have the /__proxy endpoint
 export function proxied(url) { return isNative() ? '/__proxy?url=' + encodeURIComponent(url) : url; }
 
 function art(url, size = 120) { return url ? url.replace('{w}', size).replace('{h}', size).replace(/\d+x\d+bb/, `${size}x${size}bb`) : ''; }

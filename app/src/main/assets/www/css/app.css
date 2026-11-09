@@ -227,3 +227,4 @@ h4 { margin: 6px 0 0; font-size: 11px; color: var(--accent); letter-spacing: .5p
 .am-queue .trow .bpm { width: 34px; font-size: 11px; }
 .am-queue .trow .acts button { padding: 3px 5px; }
 .am-queue .trow .meta { min-width: 60px; }
+.fx-col, .pads-col, .am-mid, .am-left { overflow-x: hidden; }

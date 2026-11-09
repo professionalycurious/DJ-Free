@@ -1,0 +1,63 @@
+{
+  "name": "dj-free",
+  "productName": "DJ Free",
+  "version": "1.1.0",
+  "description": "Free automix DJ app with FX",
+  "author": "DJ Free",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "prepare-www": "node scripts/prepare.js",
+    "start": "npm run prepare-www && electron .",
+    "dist:win": "npm run prepare-www && electron-builder --win nsis portable --x64 --publish never",
+    "dist:linux": "npm run prepare-www && electron-builder --linux dir"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
+    "resedit": "2.0.2"
+  },
+  "build": {
+    "appId": "com.djfree.app",
+    "productName": "DJ Free",
+    "copyright": "DJ Free",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "www/**/*",
+      "package.json"
+    ],
+    "afterPack": "scripts/afterPack.js",
+    "win": {
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "artifactName": "DJ-Free-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DJ Free",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "DJ-Free-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "DJ-Free-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Audio"
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/professionalycurious/DJ-Free"
+  }
+}

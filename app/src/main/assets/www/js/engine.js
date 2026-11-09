@@ -246,8 +246,8 @@ export class DeckCore {
 /* ================= Web Audio backend (desktop browsers) ================= */
 export class Engine extends EngineBase {
   async init() {
-    diag.backend = 'Web Audio';
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+    diag.backend = window.DJDesktop ? 'desktop' : 'Web Audio';
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: window.DJDesktop ? 'interactive' : 'playback' });
     this.unlock();
     if (!this.ctx.audioWorklet) throw new Error('This browser has no AudioWorklet support.');
     try {

@@ -36,8 +36,40 @@ export class UI {
     this.L.on(() => this.renderLibSoon());
     automix.on((ev) => this.onAutomix(ev));
     window.addEventListener('resize', () => this.resizeCanvases());
+    this.setupDesktop();
     this.resizeCanvases();
     requestAnimationFrame(() => this.frame());
+  }
+
+  /* ---------------- PC: drag & drop + keyboard ---------------- */
+  setupDesktop() {
+    document.addEventListener('dragover', (e) => { e.preventDefault(); });
+    document.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const files = e.dataTransfer && e.dataTransfer.files; if (!files || !files.length || this.E.native) return;
+      const added = this.L.addFiles(files);
+      toast(`Added ${added.length} track${added.length === 1 ? '' : 's'} — analysing BPM & key…`);
+      this.showPage('library'); document.querySelector('#libSrc [data-src=local]').click();
+    });
+    const keys = {
+      q: () => this.E.decks[0].toggle(), p: () => this.E.decks[1].toggle(),
+      w: () => this.E.decks[0].cueDown(), o: () => this.E.decks[1].cueDown(),
+      a: () => this.E.decks[0].sync(), l: () => this.E.decks[1].sync(),
+      arrowleft: () => { this.E.setCrossfader(Math.max(0, this.E.xfader - 0.05)); this.syncMixer(); },
+      arrowright: () => { this.E.setCrossfader(Math.min(1, this.E.xfader + 0.05)); this.syncMixer(); },
+      m: () => this.toggleAutomix(), r: () => this.toggleRecord(),
+      1: () => this.showPage('mixer'), 2: () => this.showPage('fx'), 3: () => this.showPage('pads'), 4: () => this.showPage('library'), 5: () => this.showPage('automix'),
+    };
+    'zxcvbn,.'.split('').forEach((k, i) => { keys[k] = () => this.E.sampler.trigger(i); });
+    document.addEventListener('keydown', (e) => {
+      if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      const f = keys[e.key.toLowerCase()]; if (f) { e.preventDefault(); f(); }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.key.toLowerCase() === 'w') this.E.decks[0].cueUp();
+      if (e.key.toLowerCase() === 'o') this.E.decks[1].cueUp();
+    });
   }
 
   /* ---------------- tabs ---------------- */
@@ -88,8 +120,14 @@ export class UI {
     if (res.path !== undefined) { toast(res.path ? 'Saved to ' + res.path : 'Could not save recording', 4500); return; }
     const blob = res.blob;
     const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm';
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `DJFree-Mix-${new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)}.${ext}`; a.click();
+    const name = `DJFree-Mix-${new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)}.${ext}`;
+    if (window.DJDesktop) {
+      const path = await window.DJDesktop.saveRecording(new Uint8Array(await blob.arrayBuffer()), name);
+      toast('Saved to ' + path, 5000);
+      window.DJDesktop.showFile(path);
+      return;
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
     toast('Mix downloaded');
   }
 
@@ -401,7 +439,7 @@ export class UI {
     const btn = (label, fn) => { const b = h('button', '', label); b.addEventListener('click', fn); bar.appendChild(b); return b; };
     if (this.libSrc === 'local') {
       btn('＋ ADD MUSIC', () => this.addMusic());
-      if (this.L.local.length && this.E.native) btn('CLEAR', () => { this.L.clearLocal(); this.renderLib(); });
+      if (this.L.local.length && (this.E.native || window.DJDesktop)) btn('CLEAR', () => { this.L.clearLocal(); this.renderLib(); });
       search('Filter…', () => {}, true);
       btn('QUEUE ALL', () => { this.AM.add(this.L.local.slice()); toast('Added to automix queue'); });
     } else if (this.libSrc === 'apple') {
@@ -450,7 +488,9 @@ export class UI {
     }
     if (!tracks.length) {
       const msg = {
-        local: '<b>No music yet.</b><br>Tap <b>＋ ADD MUSIC</b> to pick songs from your phone (MP3, M4A, WAV, FLAC, OGG).<br>BPM, key and waveform are analysed automatically.',
+        local: window.DJDesktop
+          ? '<b>No music yet.</b><br>Click <b>＋ ADD MUSIC</b> or <b>drag & drop</b> songs onto this window (MP3, M4A, WAV, FLAC, OGG).<br>BPM, key and waveform are analysed automatically and your library is remembered.'
+          : '<b>No music yet.</b><br>Tap <b>＋ ADD MUSIC</b> to pick songs from your phone (MP3, M4A, WAV, FLAC, OGG).<br>BPM, key and waveform are analysed automatically.',
         apple: this.appleEmptyMsg(),
         demo: '', queue: 'The automix queue is empty. Use <b>+</b> on any track or <b>QUEUE ALL</b>.', history: 'Nothing played yet.',
       }[this.libSrc];
@@ -620,6 +660,8 @@ export class UI {
     body.appendChild(h('div', 'note', `<b>How Apple Music works here:</b> catalog search works without an account. Connecting your account (MusicKit) needs a developer token from an Apple Developer membership. ` +
       `Apple Music full-length songs are FairPlay DRM-protected — Apple does not let third-party apps route them through their own audio engine, so <b>no app outside Apple's partner program can beat-match, EQ or add FX to full Apple Music streams</b>. ` +
       `DJ Free therefore mixes the 30-second previews of your Apple Music songs. For full songs, add audio files you own (My Files).`));
+    body.appendChild(h('h4', '', 'KEYBOARD (PC)'));
+    body.appendChild(h('div', 'muted small', 'Q / P play A / B · W / O cue A / B · A / L sync A / B · ← → crossfader · Z X C V B N , . sampler pads · M automix · R record · 1-5 pages · F11 full screen · drag & drop songs to add them'));
     body.appendChild(h('h4', '', 'ABOUT'));
     body.appendChild(h('div', 'muted small', 'DJ Free 1.0 · 2 decks · automix with 9 transition styles · 22 FX + 8 performance FX · hot cues, loops, rolls, beat jump, key shift · BPM/key detection · sampler · split cue · mix recording.'));
     document.getElementById('modal').classList.remove('hidden');

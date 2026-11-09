@@ -4,14 +4,14 @@
  */
 
 export const FX_LIST = [
-  { id: 'echo', name: 'Echo', param: 'Feedback', synced: true },
-  { id: 'pingpong', name: 'Ping Pong', param: 'Feedback', synced: true },
+  { id: 'echo', name: 'Echo', param: 'Fdbk', synced: true },
+  { id: 'pingpong', name: 'Ping Pong', param: 'Fdbk', synced: true },
   { id: 'reverb', name: 'Reverb', param: 'Size', synced: false },
   { id: 'flanger', name: 'Flanger', param: 'Depth', synced: true },
   { id: 'phaser', name: 'Phaser', param: 'Depth', synced: true },
   { id: 'chorus', name: 'Chorus', param: 'Depth', synced: false },
   { id: 'gate', name: 'Trance Gate', param: 'Depth', synced: true },
-  { id: 'autofilter', name: 'Auto Filter', param: 'Resonance', synced: true },
+  { id: 'autofilter', name: 'Auto Filter', param: 'Reso', synced: true },
   { id: 'wah', name: 'Wah', param: 'Freq', synced: false },
   { id: 'lpf', name: 'LP Filter', param: 'Cutoff', synced: false },
   { id: 'hpf', name: 'HP Filter', param: 'Cutoff', synced: false },
@@ -21,9 +21,9 @@ export const FX_LIST = [
   { id: 'autopan', name: 'Auto Pan', param: 'Width', synced: true },
   { id: 'tremolo', name: 'Tremolo', param: 'Depth', synced: true },
   { id: 'ringmod', name: 'Ring Mod', param: 'Freq', synced: false },
-  { id: 'pitch', name: 'Pitch Shift', param: 'Semitones', synced: false },
+  { id: 'pitch', name: 'Pitch Shift', param: 'Semi', synced: false },
   { id: 'noise', name: 'Noise Sweep', param: 'Sweep', synced: false },
-  { id: 'reverse_echo', name: 'Spiral', param: 'Feedback', synced: true },
+  { id: 'reverse_echo', name: 'Spiral', param: 'Fdbk', synced: true },
   { id: 'punch', name: 'Punch (Comp)', param: 'Amount', synced: false },
   { id: 'stereo', name: 'Stereo Wide', param: 'Width', synced: false },
 ];
