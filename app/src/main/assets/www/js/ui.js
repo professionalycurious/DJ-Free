@@ -77,32 +77,20 @@ export class UI {
 
   async toggleRecord() {
     const btn = document.getElementById('recBtn');
-    if (!this.E.rec) {
+    if (!this.E.isRecording()) {
       try { this.E.startRecording(); btn.classList.add('on'); toast('Recording mix…'); }
       catch (e) { toast('Recording not supported on this device'); }
       return;
     }
     btn.classList.remove('on'); document.getElementById('recTime').textContent = 'REC';
-    const blob = await this.E.stopRecording(); if (!blob) return;
+    toast('Saving mix…');
+    const res = await this.E.stopRecording(); if (!res) return;
+    if (res.path !== undefined) { toast(res.path ? 'Saved to ' + res.path : 'Could not save recording', 4500); return; }
+    const blob = res.blob;
     const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm';
-    const name = `DJFree-Mix-${new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)}.${ext}`;
-    if (window.DJNative) {
-      toast('Saving mix…');
-      const id = 's' + Date.now();
-      window.DJNative.saveBegin(id);
-      const buf = new Uint8Array(await blob.arrayBuffer());
-      const CH = 384 * 1024;
-      for (let i = 0; i < buf.length; i += CH) {
-        let s = ''; const part = buf.subarray(i, i + CH);
-        for (let j = 0; j < part.length; j += 8192) s += String.fromCharCode.apply(null, part.subarray(j, j + 8192));
-        window.DJNative.saveChunk(id, btoa(s));
-      }
-      const path = window.DJNative.saveEnd(id, name, blob.type.split(';')[0]);
-      toast(path ? 'Saved to ' + path : 'Could not save recording', 4000);
-    } else {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
-      toast('Mix downloaded');
-    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `DJFree-Mix-${new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)}.${ext}`; a.click();
+    toast('Mix downloaded');
   }
 
   /* ---------------- decks ---------------- */
@@ -269,8 +257,8 @@ export class UI {
       pb('SPINBACK', () => d.spinback(1.6));
       pb('REVERSE', (on) => d.reverse(on), null, true);
       pb('CENSOR', () => { d.setSlip(true); d.reverse(true); }, () => { d.reverse(false); setTimeout(() => d.setSlip(settings.slip), 30); });
-      pb('ECHO OUT', () => this.echoOut(d, false));
-      pb('WASH OUT', () => this.echoOut(d, true));
+      pb('ECHO OUT', () => d.echoOut(false));
+      pb('WASH OUT', () => d.echoOut(true));
       pb('STUTTER', () => d.roll(0.125, true), () => d.roll(0, false));
       pb('KILL ALL', () => { ['low', 'mid', 'high'].forEach(b => d.setEq(b, 0)); }, () => { ['low', 'mid', 'high'].forEach(b => d.setEq(b, this.knobs[i][b].value)); });
       col.appendChild(perf);
@@ -278,17 +266,6 @@ export class UI {
     this.E.decks.forEach(d => d.setFxBeat(0.5));
     this.buildXyTargets();
     this.setupXy();
-  }
-
-  echoOut(d, wash) {
-    if (!d.playing) return;
-    const t = d.ctx.currentTime;
-    d.sendDelay.delayTime.setValueAtTime(d.beatLen / d.rate * 0.75, t);
-    d.sendFb.gain.setValueAtTime(wash ? 0.2 : 0.62, t);
-    d.sendRevG.gain.setValueAtTime(wash ? 1.4 : 0, t);
-    d.send.gain.setValueAtTime(1, t);
-    const wait = d.beatLen / d.rate * (1 - d.beatPhase());
-    setTimeout(() => { d.pause(); d.send.gain.setTargetAtTime(0, d.ctx.currentTime, 0.02); setTimeout(() => d.sendRevG.gain.setTargetAtTime(0, d.ctx.currentTime, 1), 200); }, wait * 1000);
   }
 
   buildXyTargets() {
@@ -400,6 +377,16 @@ export class UI {
     fi.addEventListener('change', () => { const added = this.L.addFiles(fi.files); toast(`Added ${added.length} track${added.length === 1 ? '' : 's'} — analysing BPM & key…`); fi.value = ''; this.renderLib(); });
   }
 
+  addMusic() {
+    if (this.E.native) { window.DJNative.pickFiles(); }
+    else document.getElementById('fileInput').click();
+  }
+  onNativeFiles(files) {
+    const added = this.L.addNativeFiles(files);
+    if (files.length) toast(`Added ${added.length} track${added.length === 1 ? '' : 's'} — analysing BPM & key…`);
+    if (this.page !== 'library') this.showPage('library'); else this.renderLib();
+  }
+
   renderLibSoon() { if (this.libT) return; this.libT = setTimeout(() => { this.libT = null; if (this.page === 'library') this.renderLib(); if (this.page === 'automix') this.renderQueue(); }, 120); }
 
   renderLib() {
@@ -413,7 +400,8 @@ export class UI {
     };
     const btn = (label, fn) => { const b = h('button', '', label); b.addEventListener('click', fn); bar.appendChild(b); return b; };
     if (this.libSrc === 'local') {
-      btn('＋ ADD MUSIC', () => document.getElementById('fileInput').click());
+      btn('＋ ADD MUSIC', () => this.addMusic());
+      if (this.L.local.length && this.E.native) btn('CLEAR', () => { this.L.clearLocal(); this.renderLib(); });
       search('Filter…', () => {}, true);
       btn('QUEUE ALL', () => { this.AM.add(this.L.local.slice()); toast('Added to automix queue'); });
     } else if (this.libSrc === 'apple') {
@@ -484,7 +472,7 @@ export class UI {
     const loadedOn = this.E.decks.findIndex(d => d.track === t);
     const r = h('div', 'trow' + (loadedOn >= 0 ? ' loaded-' + loadedOn : ''));
     const keyCol = t.camelot ? camelotColor(t.camelot) : '#333';
-    const status = t.loading ? '<span class="spin"></span>' : (t.bpm ? t.bpm.toFixed(1) : (t.error ? '⚠' : '—'));
+    const status = t.loading ? '<span class="spin"></span>' : (t.bpm ? t.bpm.toFixed(1) : (t.error ? '<span title="' + esc(t.errorMsg || '') + '">⚠</span>' : '—'));
     r.innerHTML = `${t.artwork ? `<img loading="lazy" src="${esc(t.artwork)}">` : '<div class="noart"></div>'}
       <div class="meta"><div>${esc(t.title)}${t.preview ? '<span class="badge">PREVIEW</span>' : ''}</div><div class="ar">${esc(t.artist || '')}</div></div>
       <div class="bpm">${status}</div><div class="key" style="background:${keyCol}">${esc(t.camelot || '')}</div>
@@ -602,7 +590,7 @@ export class UI {
 
     body.appendChild(h('h4', '', 'AUDIO CHECK'));
     const E = this.E, info = h('div', 'muted small');
-    const upd = () => { info.innerHTML = `Engine: <b>${E.ctx.state}</b> · ${E.ctx.sampleRate} Hz · latency ${Math.round(((E.ctx.baseLatency || 0) + (E.ctx.outputLatency || 0)) * 1000)} ms · worklet ${diag.worklet} · analysis ${diag.worker}` +
+    const upd = () => { info.innerHTML = `Engine: <b>${esc(E.info())}</b> · analysis ${diag.worker}` +
       E.decks.map(d => ` · Deck ${d.name}: ${d.track ? (d.playing ? 'playing ' : 'stopped ') + d.position().toFixed(1) + 's' : 'empty'}`).join('') + (diag.lastError ? `<br>Last error: ${esc(diag.lastError)}` : ''); };
     upd(); const iv = setInterval(() => { if (document.getElementById('modal').classList.contains('hidden')) clearInterval(iv); else upd(); }, 500);
     const tt = h('button', 'btn', '🔊 Play test tone'); tt.addEventListener('click', () => { E.testTone(); setTimeout(upd, 300); });
@@ -786,6 +774,7 @@ export class UI {
 
   frame() {
     const E = this.E;
+    if (E.poll) E.poll();
     for (const d of E.decks) {
       if (this.waves[d.index].canvas.width) { this.drawWave(d); this.drawOverview(d); }
       if (this.page === 'mixer' || !this.page) this.drawPlatter(d);
@@ -796,15 +785,12 @@ export class UI {
         this.deckUI[d.index].pitchVal.textContent = (d.pitch >= 0 ? '+' : '') + d.pitch.toFixed(1) + '%' + (d.keyShift ? ` ${d.keyShift > 0 ? '+' : ''}${d.keyShift}st` : '');
       }
       // VU
-      const an = d.an, buf = this.vuBuf || (this.vuBuf = new Float32Array(512));
-      an.getFloatTimeDomainData(buf); let pk = 0; for (let i = 0; i < buf.length; i += 2) pk = Math.max(pk, Math.abs(buf[i]));
-      d.vu = Math.max(pk, (d.vu || 0) * 0.9);
+      d.vu = Math.max(d.level(), (d.vu || 0) * 0.9);
       this.mixUI[d.index].vuBar.style.height = Math.min(100, d.vu * 100) + '%';
     }
     // master meter
     const mm = document.getElementById('masterMeter'), mc = mm.getContext('2d');
-    const buf = this.mBuf || (this.mBuf = new Float32Array(1024)); E.masterAn.getFloatTimeDomainData(buf);
-    let pk = 0; for (let i = 0; i < buf.length; i += 2) pk = Math.max(pk, Math.abs(buf[i]));
+    const pk = E.masterLevel();
     this.mPk = Math.max(pk, (this.mPk || 0) * 0.92);
     mc.clearRect(0, 0, 12, 28); const hgt = Math.min(28, this.mPk * 28);
     mc.fillStyle = this.mPk > 0.95 ? '#ff3b3b' : this.mPk > 0.7 ? '#ffb020' : '#3ddc84'; mc.fillRect(2, 28 - hgt, 8, hgt);
@@ -817,7 +803,7 @@ export class UI {
       const p = this.AM.trans ? this.AM.progress : (act && act.track ? act.position() / act.duration : 0);
       document.getElementById('amProg').style.width = (p * 100) + '%';
     }
-    if (E.rec) { const s = (Date.now() - E.recStart) / 1000; document.getElementById('recTime').textContent = fmt(s); }
+    if (E.isRecording()) document.getElementById('recTime').textContent = fmt(E.recSeconds());
     requestAnimationFrame(() => this.frame());
   }
 }

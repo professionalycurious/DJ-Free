@@ -28,6 +28,12 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import android.database.Cursor;
+import android.media.MediaMetadataRetriever;
+import android.provider.OpenableColumns;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.ByteArrayInputStream;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -48,8 +54,10 @@ public class MainActivity extends Activity {
     static final String HOST = "appassets.androidplatform.net";
     static final String ORIGIN = "https://" + HOST;
     private static final int FILE_REQ = 4242;
+    private static final int PICK_REQ = 4243;
 
     private WebView web;
+    private NativeAudio audio;
     private ValueCallback<Uri[]> fileCallback;
     private Dialog popupDialog;
     private final Map<String, ByteArrayOutputStream> pendingSaves = new HashMap<>();
@@ -121,12 +129,14 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (audio != null) audio.stop();
         if (web != null) web.destroy();
         super.onDestroy();
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == PICK_REQ) { onPicked(resultCode, data); return; }
         if (requestCode == FILE_REQ && fileCallback != null) {
             Uri[] result = null;
             if (resultCode == RESULT_OK && data != null) {
@@ -153,6 +163,11 @@ public class MainActivity extends Activity {
             if (!HOST.equals(u.getHost())) return null;
             String path = u.getPath() == null ? "/" : u.getPath();
             if (path.equals("/__proxy")) return proxy(u.getQueryParameter("url"));
+            if (path.equals("/__pcm")) {
+                byte[] b = audio == null ? null : audio.takeMono(u.getQueryParameter("id"));
+                if (b == null) return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
+                return new WebResourceResponse("application/octet-stream", null, new ByteArrayInputStream(b));
+            }
             if (path.equals("/")) path = "/index.html";
             try {
                 AssetManager am = getAssets();
@@ -270,10 +285,89 @@ public class MainActivity extends Activity {
         }
     }
 
+    void jsCallback(String json) {
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript("window.__djNative&&__djNative.cb(" + json + ")", null); });
+    }
+
+    private void onPicked(int resultCode, Intent data) {
+        final java.util.List<Uri> uris = new java.util.ArrayList<>();
+        if (resultCode == RESULT_OK && data != null) {
+            if (data.getClipData() != null) for (int i = 0; i < data.getClipData().getItemCount(); i++) uris.add(data.getClipData().getItemAt(i).getUri());
+            else if (data.getData() != null) uris.add(data.getData());
+        }
+        new Thread(() -> {
+            JSONArray arr = new JSONArray();
+            for (Uri uri : uris) {
+                try {
+                    try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored) { }
+                    String name = "Track"; long size = 0;
+                    try (Cursor c = getContentResolver().query(uri, null, null, null, null)) {
+                        if (c != null && c.moveToFirst()) {
+                            int ni = c.getColumnIndex(OpenableColumns.DISPLAY_NAME), si = c.getColumnIndex(OpenableColumns.SIZE);
+                            if (ni >= 0 && c.getString(ni) != null) name = c.getString(ni);
+                            if (si >= 0) size = c.getLong(si);
+                        }
+                    }
+                    String title = null, artist = null; double dur = 0;
+                    MediaMetadataRetriever r = new MediaMetadataRetriever();
+                    try {
+                        r.setDataSource(MainActivity.this, uri);
+                        title = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
+                        artist = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+                        String d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                        if (d != null) dur = Long.parseLong(d) / 1000.0;
+                    } catch (Exception ignored) {
+                    } finally { try { r.release(); } catch (Exception ignored) { } }
+                    JSONObject o = new JSONObject();
+                    o.put("uri", uri.toString()); o.put("name", name); o.put("size", size);
+                    if (title != null) o.put("title", title);
+                    if (artist != null) o.put("artist", artist);
+                    o.put("duration", dur);
+                    arr.put(o);
+                } catch (Exception ignored) { }
+            }
+            try { jsCallback(new JSONObject().put("type", "files").put("files", arr).toString()); } catch (Exception ignored) { }
+        }).start();
+    }
+
     /** JS -> native bridge (window.DJNative). */
     private class Bridge {
         @JavascriptInterface
         public boolean isAndroid() { return true; }
+
+        /* ---- native audio engine ---- */
+        @JavascriptInterface
+        public String engineStart() {
+            if (audio == null) audio = new NativeAudio(MainActivity.this, MainActivity.this::jsCallback);
+            return audio.start();
+        }
+        @JavascriptInterface public void cmd(String json) { if (audio != null) audio.cmd(json); }
+        @JavascriptInterface public String state() { return audio == null ? "{}" : audio.state(); }
+        @JavascriptInterface public String engineInfo() { return audio == null ? "not started" : audio.info(); }
+        @JavascriptInterface public void testTone() { if (audio != null) audio.testTone(); }
+        @JavascriptInterface public void prepare(String reqId, String id, String src, boolean keep, boolean mono) { if (audio != null) audio.prepare(reqId, id, src, keep, mono); }
+        @JavascriptInterface public boolean assign(int deck, String id) { return audio != null && audio.assign(deck, id); }
+        @JavascriptInterface public boolean hasTrack(String id) { return audio != null && audio.hasTrack(id); }
+        @JavascriptInterface public void uploadBegin(String id, int rate, int frames) { if (audio != null) audio.uploadBegin(id, rate, frames); }
+        @JavascriptInterface public void uploadChunk(String id, String b64) { if (audio != null) audio.uploadChunk(id, b64); }
+        @JavascriptInterface public boolean uploadEnd(String id, int sample) { return audio != null && audio.uploadEnd(id, sample); }
+        @JavascriptInterface public boolean recStart() { return audio != null && audio.recStart(); }
+        @JavascriptInterface public void recStop() { if (audio != null) audio.recStop(); }
+
+        /** Opens the system picker for audio files; results arrive via __djNative.cb({type:'files'}). */
+        @JavascriptInterface
+        public void pickFiles() {
+            runOnUiThread(() -> {
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("audio/*");
+                i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"audio/*", "video/mp4", "application/ogg"});
+                i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                try { startActivityForResult(i, PICK_REQ); }
+                catch (Exception e) { jsCallback("{\"type\":\"files\",\"files\":[]}"); }
+            });
+        }
 
         @JavascriptInterface
         public void toast(String msg) {

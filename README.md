@@ -28,7 +28,8 @@ Echo, Ping Pong, Reverb, Flanger, Phaser, Chorus, Trance Gate, Auto Filter, Wah,
 Distortion, Lo-Fi, Auto Pan, Tremolo, Ring Mod, Pitch Shift, Noise Sweep, Spiral, Punch (compressor), Stereo Wide.
 **Performance FX:** Brake, Spinback, Reverse, Censor, Echo Out, Wash Out, Stutter, Kill All.
 
-**Also:** 8-pad sampler (air horn, siren, riser, impact…), mix recording (saved to `Music/DJ Free`), 4 built-in demo tracks.
+**Also:** 8-pad sampler (air horn, siren, riser, impact…), mix recording (WAV, saved to `Music/DJ Free`), 4 built-in demo tracks,
+your imported files are remembered between sessions.
 
 ## Apple Music
 
@@ -44,13 +45,18 @@ Distortion, Lo-Fi, Auto Pan, Tremolo, Ring Mod, Pitch Shift, Noise Sweep, Spiral
 
 ## How it's built
 
-- `app/src/main/java/.../MainActivity.java` — native shell: WebView served from a virtual HTTPS origin, file picker,
-  Apple preview proxy, MusicKit sign-in popup, saving recordings.
-- `app/src/main/assets/www/` — the DJ engine on the Web Audio API:
-  - `js/worklets.js` – AudioWorklet deck player (scratch, brake, loops, slip, sample-accurate scheduled starts), key-lock pitch shifter, bitcrusher
-  - `js/analysis-worker.js` – BPM/beat-grid, key detection, waveform peaks, mix points
-  - `js/engine.js` – decks, mixer, master bus, sampler, recorder
-  - `js/fx.js` – effects · `js/automix.js` – automix · `js/ui.js` – interface
+Audio on Android runs in a **native engine** (not the WebView): files are decoded with `MediaCodec`, mixed in Java on a
+real-time thread and played through `AudioTrack`. The screen is a web UI that only sends commands to that engine.
+
+- `app/src/main/java/com/djfree/app/audio/` — the DJ engine (pure Java, unit-testable on a desktop JVM):
+  `DeckPlayer` (scratch, brake, spinback, loops, slip, scheduled starts), `PitchShifter` (key lock), `Deck` (gain, 3-band EQ,
+  filter, 3 FX slots, echo/reverb wash), `Effects` (22 FX), `AudioEngine` (mixer, crossfader, sampler, limiter, split cue),
+  `Control` (command dispatcher)
+- `app/src/main/java/com/djfree/app/NativeAudio.java` — AudioTrack output, MediaCodec decoding, track cache, WAV mix recording
+- `app/src/main/java/com/djfree/app/MainActivity.java` — WebView shell, JS bridge, native file picker (remembers your files)
+- `app/src/main/assets/www/` — the UI: `js/ui.js`, `js/automix.js`, `js/native-engine.js` (bridge to the native engine),
+  `js/analysis-worker.js` (BPM, beat grid, key, waveform, mix points), `js/engine.js` (shared deck logic + a Web Audio
+  backend used when the UI runs in a desktop browser)
 
 ### Build it yourself
 

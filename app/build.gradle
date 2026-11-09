@@ -7,8 +7,8 @@ android {
         applicationId 'com.djfree.app'
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName '1.0.1'
+        versionCode 3
+        versionName '1.1.0'
     }
     signingConfigs {
         // Project key so every build (local or CI) can update an installed copy.

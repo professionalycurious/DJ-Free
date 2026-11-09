@@ -121,7 +121,7 @@ export class Automix {
 
   resetDeck(d) {
     d.setEq('low', 0.5); d.setEq('mid', 0.5); d.setEq('high', 0.5); d.setFilter(0.5);
-    d.send.gain.setTargetAtTime(0, d.ctx.currentTime, 0.05); d.sendRevG.gain.setTargetAtTime(0, d.ctx.currentTime, 0.05);
+    d.resetSend();
     d.uiEq = { low: 0.5, mid: 0.5, high: 0.5, filter: 0.5 };
     this.ui.syncDeckKnobs(d);
   }
@@ -138,6 +138,7 @@ export class Automix {
   }
 
   tick() {
+    if (this.engine.poll) this.engine.poll();
     if (!this.enabled) return;
     const E = this.engine;
     if (this.trans) return this.runTransition();
@@ -177,16 +178,15 @@ export class Automix {
   beginTransition(immediate) {
     const cur = this.active, next = this.other(cur), E = this.engine;
     const type = immediate ? 'cut' : this.pickTransition(cur, next);
-    const ctx = E.ctx;
     // next downbeat (bar boundary) of the outgoing track, converted to context time
-    let startCtx = ctx.currentTime + 0.06;
+    let startCtx = E.now() + 0.08;
     if (!immediate && cur.an_ && cur.playing) {
       const pos = cur.position(), bar = cur.beatLen * 4, fb = cur.an_.firstBeat;
       let nb = fb + Math.ceil((pos - fb) / bar - 1e-3) * bar;
       if (nb - pos < 0.08) nb += bar;
       // a beat is enough for quick transitions
       if (type === 'spin' || type === 'brake' || type === 'cut') { nb = fb + Math.ceil((pos - fb) / cur.beatLen) * cur.beatLen; if (nb - pos < 0.08) nb += cur.beatLen; }
-      startCtx = ctx.currentTime + (nb - pos) / cur.rate;
+      startCtx = E.now() + (nb - pos) / cur.rate;
     }
     const beatSec = cur.beatLen / cur.rate;
     let beats = this.transBeats(cur);
@@ -202,9 +202,9 @@ export class Automix {
   }
 
   runTransition() {
-    const tr = this.trans, E = this.engine, ctx = E.ctx;
+    const tr = this.trans, E = this.engine;
     const { cur, next, type } = tr;
-    const now = ctx.currentTime;
+    const now = E.now();
     const p = Math.max(0, Math.min(1, (now - tr.start) / Math.max(0.001, tr.dur)));
     this.progress = p;
     const toNext = next.index === 1 ? (v) => v : (v) => 1 - v; // crossfader position heading towards next deck
@@ -234,18 +234,14 @@ export class Automix {
         eq(next, 'low', p < 0.75 ? 0 : 0.5);
         if (p >= 0.75 && !tr.fired.echo) {
           tr.fired.echo = true;
-          cur.sendDelay.delayTime.setValueAtTime(cur.beatLen / cur.rate * 0.75, now);
-          cur.sendFb.gain.setValueAtTime(0.6, now);
-          cur.send.gain.setValueAtTime(1, now);
-          cur.send.gain.setTargetAtTime(0, now + 0.01, 0.02);
+          cur.echoPulse(cur.beatLen / cur.rate * 0.75, 0.6);
           setX(1);
         }
         if (p >= 0.75) setX(1);
         break;
       }
       case 'reverb': {
-        cur.sendRevG.gain.setTargetAtTime(p * 1.2, now, 0.05); cur.send.gain.setTargetAtTime(p < 0.85 ? 1 : 0, now, 0.05);
-        cur.sendFb.gain.setValueAtTime(0, now);
+        cur.setSendFx({ rev: p * 1.2, revTc: 0.05, fb: 0 }); cur.setSend(p < 0.85 ? 1 : 0, 0.05);
         flt(cur, 0.5 + p * 0.4);
         eq(next, 'low', p < 0.7 ? 0 : 0.5);
         setX(p < 0.85 ? smooth(p * 0.6) : 1);
@@ -266,7 +262,6 @@ export class Automix {
     const { cur, next } = tr;
     this.trans = null; this.progress = 0;
     if (!aborted) {
-      const d = cur.ctx.currentTime;
       // let echo / reverb tails ring out
       setTimeout(() => { cur.pause(); this.resetDeck(cur); cur.automixLoaded = null; cur.setPitch(0); }, tr.type === 'echo' || tr.type === 'reverb' ? 3000 : 50);
       this.engine.setCrossfader(next.index === 1 ? 1 : 0);
@@ -277,7 +272,6 @@ export class Automix {
       this.active = next;
       this.glideTempo(next);
       this.emit('queue');
-      void d;
     }
     this.ui.syncMixer();
     this.emit('state');
